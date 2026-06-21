@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Colisiones, Fuerzas y Momento Lineal - Samuel Vota</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            overflow: hidden;
+            background: #080d12;
+            color: white;
+            font-family: Arial, sans-serif;
+        }
+
+        #info {
+            position: absolute;
+            top: 16px;
+            left: 16px;
+            width: min(470px, calc(100vw - 32px));
+            padding: 16px;
+            border: 1px solid rgba(255, 255, 255, 0.16);
+            border-radius: 10px;
+            background: rgba(5, 10, 16, 0.90);
+            backdrop-filter: blur(12px);
+            z-index: 10;
+        }
+
+        #info h1 {
+            margin: 0 0 8px;
+            color: #55e7ff;
+            font-size: 18px;
+        }
+
+        #info p {
+            margin: 6px 0;
+            color: #cbd5df;
+            font-size: 13px;
+            line-height: 1.45;
+        }
+
+        #equation {
+            margin: 12px 0;
+            padding: 10px;
+            border-left: 3px solid #55e7ff;
+            background: rgba(85, 231, 255, 0.08);
+            font-weight: bold;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        #debug {
+            display: block;
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px solid rgba(255, 255, 255, 0.12);
+            color: #f1f5f9;
+            font-family: monospace;
+            font-size: 12px;
+            line-height: 1.55;
+        }
+
+        .active {
+            color: #55ff9a;
+        }
+
+        .inactive {
+            color: #ff6b6b;
+        }
+
+        .warn {
+            color: #ffd166;
+        }
+
+        @media (max-width: 600px) {
+            #info {
+                font-size: 12px;
+                max-height: 55vh;
+                overflow-y: auto;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <section id="info">
+        <h1>Colisiones, fuerzas y momento lineal</h1>
+
+        <p>
+            <strong style="color:#ff4d4d">Cubo rojo:</strong> fuerza constante, gravedad, arrastre, rozamiento y colisión AABB.
+        </p>
+
+        <p>
+            <strong style="color:#4da6ff">Esfera azul:</strong> proyectil con impulso, masa, restitución y colisión por esfera.
+        </p>
+
+        <p>
+            <strong style="color:#24e985">Cubo verde:</strong> jugador controlable mediante fuerzas, fricción y colisiones.
+        </p>
+
+        <div id="equation">
+            ΣF = ma<br>
+            m₁v₁ + m₂v₂ = m₁v′₁ + m₂v′₂<br>
+            J = -(1 + e)(vrel · n) / (1/m₁ + 1/m₂)
+        </div>
+
+        <p>
+            <strong>WASD:</strong> mover cubo verde.<br>
+            <strong>Espacio:</strong> impulso/salto del jugador.<br>
+            <strong>I:</strong> impulso sobre la esfera azul.<br>
+            <strong>F:</strong> impulso sobre el cubo rojo.<br>
+            <strong>E:</strong> cambiar restitución.<br>
+            <strong>G:</strong> activar/desactivar gravedad.<br>
+            <strong>H:</strong> activar/desactivar arrastre.<br>
+            <strong>T:</strong> activar/desactivar rozamiento.<br>
+            <strong>R:</strong> reiniciar simulación.
+        </p>
+
+        <p>
+            Vectores:
+            <span style="color:#42e8ff">velocidad</span>,
+            <span style="color:#ffae42">fuerza neta</span>,
+            <span style="color:#ff4d6d">fricción / impulso</span>,
+            <span style="color:#ffd166">normal de impacto</span>.
+        </p>
+
+        <span id="debug"></span>
+    </section>
+
+    <script type="module">
+        import * as THREE from "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js";
+
+        // ============================================================
+        // CONFIGURACIÓN GENERAL
+        // ============================================================
+
+        const GRAVITY = new THREE.Vector3(0, -9.81, 0);
+        const WORLD_LIMIT = 15;
+        const FIXED_Y_OFFSET = 0.02;
+        const MAX_DT = 1 / 30;
+        const SUB_STEPS = 5;
+
+        let gravityEnabled = true;
+        let dragEnabled = true;
+        let frictionEnabled = true;
+
+        let collisionCount = 0;
+        let lastCollisionInfo = "Sin colisiones todavía";
+
+        const restitutionModes = [
+            {
+                name: "Elástica",
+                value: 1.0,
+                description: "e = 1.00 | rebote fuerte"
+            },
+            {
+                name: "Inelástica",
+                value: 0.55,
+                description: "e = 0.55 | pierde energía"
+            },
+            {
+                name: "Muy inelástica",
+                value: 0.15,
+                description: "e = 0.15 | rebote mínimo"
+            }
+        ];
+
+        let restitutionIndex = 1;
+        let globalRestitution = restitutionModes[restitutionIndex].value;
+
+        // ============================================================
+        // ESCENA
+        // ============================================================
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x080d12);
+        scene.fog = new THREE.Fog(0x080d12, 26, 58);
+
+        const camera = new THREE.PerspectiveCamera(
+            58,
+            window.innerWidth / window.innerHeight,
+            0.1,
+            1000
+        );
+
+        camera.position.set(0, 13, 22);
+        camera.lookAt(0, 1.2, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        document.body.appendChild(renderer.domElement);
+
+        // ============================================================
+        // ILUMINACIÓN Y ESCENARIO
+        // ============================================================
+
+        scene.add(new THREE.HemisphereLight(0xa9d8ff, 0x15202b, 1.6));
+
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 2.4);
+        directionalLight.position.set(8, 16, 10);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.set(2048, 2048);
+        directionalLight.shadow.camera.left = -22;
+        directionalLight.shadow.camera.right = 22;
+        directionalLight.shadow.camera.top = 22;
+        directionalLight.shadow.camera.bottom = -22;
+        scene.add(directionalLight);
+
+        const floor = new THREE.Mesh(
+            new THREE.PlaneGeometry(34, 34),
+            new THREE.MeshStandardMaterial({
+                color: 0x111a22,
+                roughness: 0.92,
+                metalness: 0.08
+            })
+        );
+
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        scene.add(floor);
+
+        const grid = new THREE.GridHelper(34, 34, 0x43758f, 0x24343f);
+        grid.position.y = 0.01;
+        scene.add(grid);
+
+        // ============================================================
+        // CLASE PHYSICS BODY
+        // Conserva las características de entregas anteriores:
+        // fuerza, masa, aceleración, gravedad, arrastre, fricción e impulso.
+        // Se amplía con shape para colisiones: "sphere" o "aabb".
+        // ============================================================
+
+        class PhysicsBody {
+            constructor(mesh, options = {}) {
+                this.mesh = mesh;
+
+                this.name = options.name ?? "Body";
+                this.shape = options.shape ?? "sphere";
+
+                this.mass = options.mass ?? 1;
+                this.inverseMass = this.mass > 0 ? 1 / this.mass : 0;
+
+                this.radius = options.radius ?? 0.5;
+                this.halfSize = options.halfSize ?? new THREE.Vector3(0.5, 0.5, 0.5);
+
+                this.dragCoefficient = options.dragCoefficient ?? 0.05;
+                this.staticFriction = options.staticFriction ?? 0.45;
+                this.kineticFriction = options.kineticFriction ?? 0.30;
+                this.restitution = options.restitution ?? 0.5;
+
+                this.velocity = new THREE.Vector3();
+                this.acceleration = new THREE.Vector3();
+                this.forceAccumulator = new THREE.Vector3();
+
+                this.lastNetForce = new THREE.Vector3();
+                this.lastDragForce = new THREE.Vector3();
+                this.lastFrictionForce = new THREE.Vector3();
+
+                this.grounded = false;
+                this.isPlayer = options.isPlayer ?? false;
+
+                if (options.velocity) {
+                    this.velocity.copy(options.velocity);
+                }
+
+                this.fixHeight();
+            }
+
+            fixHeight() {
+                if (this.shape === "sphere") {
+                    this.mesh.position.y = this.radius + FIXED_Y_OFFSET;
+                } else {
+                    this.mesh.position.y = this.halfSize.y + FIXED_Y_OFFSET;
+                }
+            }
+
+            beginStep() {
+                this.forceAccumulator.set(0, 0, 0);
+                this.lastDragForce.set(0, 0, 0);
+                this.lastFrictionForce.set(0, 0, 0);
+
+                if (gravityEnabled) {
+                    // Peso: Fg = mg
+                    this.addForce(
+                        GRAVITY.clone().multiplyScalar(this.mass)
+                    );
+                }
+            }
+
+            addForce(force) {
+                this.forceAccumulator.add(force);
+            }
+
+            addImpulse(impulse) {
+                // Impulso: J = Δp = mΔv
+                // Δv = J / m
+                if (this.inverseMass === 0) {
+                    return;
+                }
+
+                this.velocity.addScaledVector(impulse, this.inverseMass);
+            }
+
+            applyAirDrag() {
+                if (!dragEnabled || this.velocity.lengthSq() < 0.0001) {
+                    return;
+                }
+
+                // Arrastre cuadrático:
+                // Fd = -c |v| v
+                const speed = this.velocity.length();
+
+                this.lastDragForce
+                    .copy(this.velocity)
+                    .multiplyScalar(-this.dragCoefficient * speed);
+
+                this.addForce(this.lastDragForce);
+            }
+
+            applyGroundFriction(dt) {
+                if (!frictionEnabled || !this.grounded) {
+                    return;
+                }
+
+                const horizontalVelocity = new THREE.Vector3(
+                    this.velocity.x,
+                    0,
+                    this.velocity.z
+                );
+
+                const externalHorizontalForce = new THREE.Vector3(
+                    this.forceAccumulator.x,
+                    0,
+                    this.forceAccumulator.z
+                );
+
+                const normalForce = gravityEnabled
+                    ? this.mass * Math.abs(GRAVITY.y)
+                    : 0;
+
+                const speed = horizontalVelocity.length();
+                const appliedForce = externalHorizontalForce.length();
+                const maxStaticFriction = this.staticFriction * normalForce;
+
+                // Fricción estática
+                if (speed < 0.04 && appliedForce <= maxStaticFriction) {
+                    this.lastFrictionForce.copy(externalHorizontalForce).negate();
+                    this.velocity.x = 0;
+                    this.velocity.z = 0;
+                    this.addForce(this.lastFrictionForce);
+                    return;
+                }
+
+                let frictionDirection;
+
+                if (speed >= 0.04) {
+                    frictionDirection = horizontalVelocity.normalize().negate();
+                } else if (appliedForce > 0) {
+                    frictionDirection = externalHorizontalForce.normalize().negate();
+                } else {
+                    return;
+                }
+
+                // Fricción cinética
+                const kineticMagnitude = this.kineticFriction * normalForce;
+
+                const stoppingMagnitude = speed > 0
+                    ? (this.mass * speed) / Math.max(dt, 0.0001)
+                    : kineticMagnitude;
+
+                this.lastFrictionForce
+                    .copy(frictionDirection)
+                    .multiplyScalar(Math.min(kineticMagnitude, stoppingMagnitude));
+
+                this.addForce(this.lastFrictionForce);
+            }
+
+            integrate(dt) {
+                if (this.inverseMass === 0) {
+                    return;
+                }
+
+                // Segunda Ley de Newton:
+                // ΣF = ma
+                // a = ΣF / m
+                this.lastNetForce.copy(this.forceAccumulator);
+
+                this.acceleration
+                    .copy(this.forceAccumulator)
+                    .multiplyScalar(this.inverseMass);
+
+                // Integración Euler semi-implícita
+                this.velocity.addScaledVector(this.acceleration, dt);
+
+                const maxSpeed = this.isPlayer ? 11 : 22;
+
+                if (this.velocity.length() > maxSpeed) {
+                    this.velocity.setLength(maxSpeed);
+                }
+
+                this.mesh.position.addScaledVector(this.velocity, dt);
+
+                this.resolveFloorCollision();
+                this.resolveWorldLimits();
+
+                this.forceAccumulator.set(0, 0, 0);
+            }
+
+            resolveFloorCollision() {
+                const minimumHeight = this.shape === "sphere"
+                    ? this.radius
+                    : this.halfSize.y;
+
+                if (this.mesh.position.y <= minimumHeight + FIXED_Y_OFFSET) {
+                    this.mesh.position.y = minimumHeight + FIXED_Y_OFFSET;
+
+                    if (this.velocity.y < 0) {
+                        if (Math.abs(this.velocity.y) > 0.6) {
+                            this.velocity.y *= -this.restitution;
+                        } else {
+                            this.velocity.y = 0;
+                        }
+                    }
+
+                    this.grounded = true;
+                } else {
+                    this.grounded = false;
+                }
+            }
+
+            resolveWorldLimits() {
+                const extentX = this.shape === "sphere" ? this.radius : this.halfSize.x;
+                const extentZ = this.shape === "sphere" ? this.radius : this.halfSize.z;
+
+                const minX = -WORLD_LIMIT + extentX;
+                const maxX = WORLD_LIMIT - extentX;
+                const minZ = -WORLD_LIMIT + extentZ;
+                const maxZ = WORLD_LIMIT - extentZ;
+
+                if (this.mesh.position.x < minX) {
+                    this.mesh.position.x = minX;
+                    this.velocity.x *= -globalRestitution;
+                }
+
+                if (this.mesh.position.x > maxX) {
+                    this.mesh.position.x = maxX;
+                    this.velocity.x *= -globalRestitution;
+                }
+
+                if (this.mesh.position.z < minZ) {
+                    this.mesh.position.z = minZ;
+                    this.velocity.z *= -globalRestitution;
+                }
+
+                if (this.mesh.position.z > maxZ) {
+                    this.mesh.position.z = maxZ;
+                    this.velocity.z *= -globalRestitution;
+                }
+            }
+
+            update(dt, externalForce = null) {
+                this.beginStep();
+
+                if (externalForce) {
+                    this.addForce(externalForce);
+                }
+
+                this.applyAirDrag();
+                this.applyGroundFriction(dt);
+                this.integrate(dt);
+            }
+
+            getAABB() {
+                const p = this.mesh.position;
+
+                if (this.shape === "sphere") {
+                    return {
+                        minX: p.x - this.radius,
+                        maxX: p.x + this.radius,
+                        minZ: p.z - this.radius,
+                        maxZ: p.z + this.radius
+                    };
+                }
+
+                return {
+                    minX: p.x - this.halfSize.x,
+                    maxX: p.x + this.halfSize.x,
+                    minZ: p.z - this.halfSize.z,
+                    maxZ: p.z + this.halfSize.z
+                };
+            }
+        }
+
+        // ============================================================
+        // OBJETOS PRINCIPALES DE LAS ENTREGAS ANTERIORES
+        // ============================================================
+
+        const bodies = [];
+
+        // Cubo rojo: fuerza constante
+        const redCubeMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.2, 1.2, 1.2),
+            new THREE.MeshStandardMaterial({
+                color: 0xff3535,
+                roughness: 0.35,
+                metalness: 0.25
+            })
+        );
+
+        redCubeMesh.castShadow = true;
+        redCubeMesh.position.set(-10, 0.6, -4);
+        scene.add(redCubeMesh);
+
+        const redCube = new PhysicsBody(redCubeMesh, {
+            name: "Cubo rojo",
+            shape: "aabb",
+            mass: 2,
+            halfSize: new THREE.Vector3(0.6, 0.6, 0.6),
+            dragCoefficient: 0.08,
+            staticFriction: 0.32,
+            kineticFriction: 0.22,
+            restitution: 0.35
+        });
+
+        bodies.push(redCube);
+
+        const redConstantForce = new THREE.Vector3(13, 0, 0);
+
+        // Esfera azul: proyectil / impulso
+        const sphereMesh = new THREE.Mesh(
+            new THREE.SphereGeometry(0.65, 32, 32),
+            new THREE.MeshStandardMaterial({
+                color: 0x278cff,
+                roughness: 0.25,
+                metalness: 0.15
+            })
+        );
+
+        sphereMesh.castShadow = true;
+        sphereMesh.position.set(-8.5, 0.65, 2.2);
+        scene.add(sphereMesh);
+
+        const sphere = new PhysicsBody(sphereMesh, {
+            name: "Esfera azul",
+            shape: "sphere",
+            mass: 1,
+            radius: 0.65,
+            dragCoefficient: 0.065,
+            staticFriction: 0.30,
+            kineticFriction: 0.20,
+            restitution: 0.68
+        });
+
+        bodies.push(sphere);
+
+        // Cubo verde: jugador controlable
+        const playerMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.1, 1.1, 1.1),
+            new THREE.MeshStandardMaterial({
+                color: 0x24e985,
+                roughness: 0.32,
+                metalness: 0.18
+            })
+        );
+
+        playerMesh.castShadow = true;
+        playerMesh.position.set(1, 0.55, 5);
+        scene.add(playerMesh);
+
+        const player = new PhysicsBody(playerMesh, {
+            name: "Jugador verde",
+            shape: "aabb",
+            mass: 3,
+            halfSize: new THREE.Vector3(0.55, 0.55, 0.55),
+            dragCoefficient: 0.10,
+            staticFriction: 0.56,
+            kineticFriction: 0.42,
+            restitution: 0.12,
+            isPlayer: true
+        });
+
+        bodies.push(player);
+
+        // Cubo morado: cuerpo extra para choques angulares y AABB
+        const purpleCubeMesh = new THREE.Mesh(
+            new THREE.BoxGeometry(1.5, 1.0, 1.5),
+            new THREE.MeshStandardMaterial({
+                color: 0x9b5cff,
+                roughness: 0.35,
+                metalness: 0.20
+            })
+        );
+
+        purpleCubeMesh.castShadow = true;
+        purpleCubeMesh.position.set(7, 0.5, -1.5);
+        scene.add(purpleCubeMesh);
+
+        const purpleCube = new PhysicsBody(purpleCubeMesh, {
+            name: "Prisma morado",
+            shape: "aabb",
+            mass: 5,
+            halfSize: new THREE.Vector3(0.75, 0.5, 0.75),
+            dragCoefficient: 0.075,
+            staticFriction: 0.42,
+            kineticFriction: 0.28,
+            restitution: 0.40
+        });
+
+        bodies.push(purpleCube);
+
+        // ============================================================
+        // VECTORES VISUALES
+        // ============================================================
+
+        const velocityArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(),
+            1,
+            0x42e8ff
+        );
+
+        const forceArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(),
+            1,
+            0xffae42
+        );
+
+        const frictionArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(-1, 0, 0),
+            new THREE.Vector3(),
+            1,
+            0xff4d6d
+        );
+
+        const impactNormalArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(),
+            1,
+            0xffd166
+        );
+
+        const impulseArrow = new THREE.ArrowHelper(
+            new THREE.Vector3(1, 0, 0),
+            new THREE.Vector3(),
+            1,
+            0xff4d6d
+        );
+
+        const contactMarker = new THREE.Mesh(
+            new THREE.SphereGeometry(0.16, 16, 16),
+            new THREE.MeshBasicMaterial({ color: 0xffd166 })
+        );
+
+        scene.add(
+            velocityArrow,
+            forceArrow,
+            frictionArrow,
+            impactNormalArrow,
+            impulseArrow,
+            contactMarker
+        );
+
+        impactNormalArrow.visible = false;
+        impulseArrow.visible = false;
+        contactMarker.visible = false;
+
+        let impactVisualTimer = 0;
+
+        function updateArrow(arrow, origin, vector, scale, maximumLength) {
+            arrow.position.copy(origin);
+            arrow.position.y += 0.9;
+
+            const magnitude = vector.length();
+
+            if (magnitude < 0.01) {
+                arrow.visible = false;
+                return;
+            }
+
+            arrow.visible = true;
+            arrow.setDirection(vector.clone().normalize());
+            arrow.setLength(
+                Math.min(magnitude * scale, maximumLength),
+                0.28,
+                0.14
+            );
+        }
+
+        function showImpactVector(contactPoint, normal, impulseMagnitude) {
+            impactVisualTimer = 0.35;
+
+            contactMarker.visible = true;
+            contactMarker.position.copy(contactPoint);
+            contactMarker.position.y = 0.25;
+
+            impactNormalArrow.visible = true;
+            impactNormalArrow.position.copy(contactPoint);
+            impactNormalArrow.position.y = 0.45;
+            impactNormalArrow.setDirection(normal.clone().normalize());
+            impactNormalArrow.setLength(2.8, 0.35, 0.16);
+
+            impulseArrow.visible = true;
+            impulseArrow.position.copy(contactPoint);
+            impulseArrow.position.y = 0.85;
+            impulseArrow.setDirection(normal.clone().normalize());
+            impulseArrow.setLength(
+                Math.min(Math.abs(impulseMagnitude) * 0.25, 4),
+                0.35,
+                0.16
+            );
+        }
+
+        function updateImpactVisual(dt) {
+            if (impactVisualTimer > 0) {
+                impactVisualTimer -= dt;
+                return;
+            }
+
+            impactNormalArrow.visible = false;
+            impulseArrow.visible = false;
+            contactMarker.visible = false;
+        }
+
+        // ============================================================
+        // DETECCIÓN DE COLISIONES GEOMÉTRICAS
+        // Esfera-Esfera, AABB-AABB y Esfera-AABB
+        // ============================================================
+
+        function detectCollision(a, b) {
+            if (a.shape === "sphere" && b.shape === "sphere") {
+                return detectSphereSphere(a, b);
+            }
+
+            if (a.shape === "aabb" && b.shape === "aabb") {
+                return detectAABBAABB(a, b);
+            }
+
+            if (a.shape === "sphere" && b.shape === "aabb") {
+                return detectSphereAABB(a, b);
+            }
+
+            if (a.shape === "aabb" && b.shape === "sphere") {
+                const collision = detectSphereAABB(b, a);
+
+                if (!collision) {
+                    return null;
+                }
+
+                collision.normal.multiplyScalar(-1);
+
+                return {
+                    a,
+                    b,
+                    normal: collision.normal,
+                    penetration: collision.penetration,
+                    contactPoint: collision.contactPoint
+                };
+            }
+
+            return null;
+        }
+
+        function detectSphereSphere(a, b) {
+            const delta = new THREE.Vector3()
+                .subVectors(b.mesh.position, a.mesh.position);
+
+            const radiusSum = a.radius + b.radius;
+            const distanceSquared = delta.lengthSq();
+
+            if (distanceSquared >= radiusSum * radiusSum) {
+                return null;
+            }
+
+            const distance = Math.sqrt(distanceSquared);
+
+            const normal = distance > 0.0001
+                ? delta.clone().multiplyScalar(1 / distance)
+                : new THREE.Vector3(1, 0, 0);
+
+            const penetration = radiusSum - distance;
+
+            const contactPoint = a.mesh.position
+                .clone()
+                .addScaledVector(normal, a.radius - penetration * 0.5);
+
+            return {
+                a,
+                b,
+                normal,
+                penetration,
+                contactPoint
+            };
+        }
+
+        function detectAABBAABB(a, b) {
+            const boxA = a.getAABB();
+            const boxB = b.getAABB();
+
+            const overlapX = Math.min(boxA.maxX, boxB.maxX) - Math.max(boxA.minX, boxB.minX);
+            const overlapZ = Math.min(boxA.maxZ, boxB.maxZ) - Math.max(boxA.minZ, boxB.minZ);
+
+            if (overlapX <= 0 || overlapZ <= 0) {
+                return null;
+            }
+
+            const dx = b.mesh.position.x - a.mesh.position.x;
+            const dz = b.mesh.position.z - a.mesh.position.z;
+
+            let normal;
+            let penetration;
+
+            if (overlapX < overlapZ) {
+                normal = new THREE.Vector3(Math.sign(dx) || 1, 0, 0);
+                penetration = overlapX;
+            } else {
+                normal = new THREE.Vector3(0, 0, Math.sign(dz) || 1);
+                penetration = overlapZ;
+            }
+
+            const contactPoint = new THREE.Vector3(
+                (a.mesh.position.x + b.mesh.position.x) * 0.5,
+                Math.max(a.mesh.position.y, b.mesh.position.y),
+                (a.mesh.position.z + b.mesh.position.z) * 0.5
+            );
+
+            return {
+                a,
+                b,
+                normal,
+                penetration,
+                contactPoint
+            };
+        }
+
+        function detectSphereAABB(sphereBody, boxBody) {
+            const sphereCenter = sphereBody.mesh.position;
+            const box = boxBody.getAABB();
+
+            const closestX = THREE.MathUtils.clamp(
+                sphereCenter.x,
+                box.minX,
+                box.maxX
+            );
+
+            const closestZ = THREE.MathUtils.clamp(
+                sphereCenter.z,
+                box.minZ,
+                box.maxZ
+            );
+
+            const closestPoint = new THREE.Vector3(
+                closestX,
+                sphereCenter.y,
+                closestZ
+            );
+
+            const fromClosestToSphere = new THREE.Vector3()
+                .subVectors(sphereCenter, closestPoint);
+
+            fromClosestToSphere.y = 0;
+
+            const distanceSquared = fromClosestToSphere.lengthSq();
+
+            if (distanceSquared > sphereBody.radius * sphereBody.radius) {
+                return null;
+            }
+
+            let normal;
+            let penetration;
+
+            if (distanceSquared > 0.0001) {
+                const distance = Math.sqrt(distanceSquared);
+
+                normal = fromClosestToSphere
+                    .clone()
+                    .normalize()
+                    .multiplyScalar(-1);
+
+                penetration = sphereBody.radius - distance;
+            } else {
+                const dx = boxBody.mesh.position.x - sphereBody.mesh.position.x;
+                const dz = boxBody.mesh.position.z - sphereBody.mesh.position.z;
+
+                const overlapX = boxBody.halfSize.x + sphereBody.radius - Math.abs(dx);
+                const overlapZ = boxBody.halfSize.z + sphereBody.radius - Math.abs(dz);
+
+                if (overlapX < overlapZ) {
+                    normal = new THREE.Vector3(Math.sign(dx) || 1, 0, 0);
+                    penetration = overlapX;
+                } else {
+                    normal = new THREE.Vector3(0, 0, Math.sign(dz) || 1);
+                    penetration = overlapZ;
+                }
+            }
+
+            const contactPoint = new THREE.Vector3(
+                closestX,
+                sphereBody.mesh.position.y,
+                closestZ
+            );
+
+            return {
+                a: sphereBody,
+                b: boxBody,
+                normal,
+                penetration,
+                contactPoint
+            };
+        }
+
+        // ============================================================
+        // RESPUESTA AL CHOQUE
+        // Conservación del momento lineal + coeficiente de restitución
+        // ============================================================
+
+        function resolveCollision(collision) {
+            const { a, b, normal, penetration, contactPoint } = collision;
+
+            const inverseMassSum = a.inverseMass + b.inverseMass;
+
+            if (inverseMassSum <= 0) {
+                return;
+            }
+
+            // --------------------------------------------------------
+            // 1. Corrección posicional anti-clipping
+            // Evita que los cuerpos se atraviesen visualmente.
+            // --------------------------------------------------------
+
+            const correctionPercent = 0.82;
+            const penetrationSlop = 0.001;
+
+            const correctionMagnitude =
+                Math.max(penetration - penetrationSlop, 0) /
+                inverseMassSum *
+                correctionPercent;
+
+            const correction = normal
+                .clone()
+                .multiplyScalar(correctionMagnitude);
+
+            a.mesh.position.addScaledVector(correction, -a.inverseMass);
+            b.mesh.position.addScaledVector(correction, b.inverseMass);
+
+            a.fixHeight();
+            b.fixHeight();
+
+            // --------------------------------------------------------
+            // 2. Impulso por conservación del momento
+            // m1v1 + m2v2 = m1v'1 + m2v'2
+            // J = -(1 + e)(vrel · n) / (1/m1 + 1/m2)
+            // --------------------------------------------------------
+
+            const relativeVelocity = new THREE.Vector3()
+                .subVectors(b.velocity, a.velocity);
+
+            const velocityAlongNormal = relativeVelocity.dot(normal);
+
+            // Si se separan, no se aplica impulso extra.
+            if (velocityAlongNormal > 0) {
+                return;
+            }
+
+            const e = Math.min(
+                globalRestitution,
+                a.restitution,
+                b.restitution
+            );
+
+            const impulseMagnitude =
+                -(1 + e) * velocityAlongNormal / inverseMassSum;
+
+            const impulse = normal
+                .clone()
+                .multiplyScalar(impulseMagnitude);
+
+            a.velocity.addScaledVector(impulse, -a.inverseMass);
+            b.velocity.addScaledVector(impulse, b.inverseMass);
+
+            collisionCount++;
+
+            lastCollisionInfo =
+                `${a.name} ↔ ${b.name}<br>` +
+                `penetración = ${penetration.toFixed(3)} u<br>` +
+                `normal = (${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)})<br>` +
+                `J = ${impulseMagnitude.toFixed(3)} N·s<br>` +
+                `e = ${e.toFixed(2)}`;
+
+            showImpactVector(contactPoint, normal, impulseMagnitude);
+        }
+
+        function solveCollisions() {
+            for (let i = 0; i < bodies.length; i++) {
+                for (let j = i + 1; j < bodies.length; j++) {
+                    const collision = detectCollision(bodies[i], bodies[j]);
+
+                    if (collision) {
+                        resolveCollision(collision);
+                    }
+                }
+            }
+        }
+
+        // ============================================================
+        // CONTROLES
+        // ============================================================
+
+        const keys = {
+            w: false,
+            a: false,
+            s: false,
+            d: false
+        };
+
+        const playerForceMagnitude = 35;
+        const playerForce = new THREE.Vector3();
+
+        window.addEventListener("keydown", (event) => {
+            const key = event.key.toLowerCase();
+
+            if (key in keys) {
+                keys[key] = true;
+            }
+
+            if (event.repeat) {
+                return;
+            }
+
+            if (event.code === "Space") {
+                event.preventDefault();
+
+                const direction = new THREE.Vector3();
+
+                if (keys.w) direction.z -= 1;
+                if (keys.s) direction.z += 1;
+                if (keys.a) direction.x -= 1;
+                if (keys.d) direction.x += 1;
+
+                if (direction.lengthSq() === 0) {
+                    direction.set(0, 1, 0);
+                } else {
+                    direction.normalize();
+                    direction.y = 0.65;
+                    direction.normalize();
+                }
+
+                player.addImpulse(direction.multiplyScalar(18));
+            }
+
+            if (key === "i") {
+                sphere.addImpulse(new THREE.Vector3(8, 9, -1.5));
+            }
+
+            if (key === "f") {
+                redCube.addImpulse(new THREE.Vector3(12, 5, 0));
+            }
+
+            if (key === "e") {
+                restitutionIndex = (restitutionIndex + 1) % restitutionModes.length;
+                globalRestitution = restitutionModes[restitutionIndex].value;
+            }
+
+            if (key === "g") {
+                gravityEnabled = !gravityEnabled;
+            }
+
+            if (key === "h") {
+                dragEnabled = !dragEnabled;
+            }
+
+            if (key === "t") {
+                frictionEnabled = !frictionEnabled;
+            }
+
+            if (key === "r") {
+                resetSimulation();
+            }
+        });
+
+        window.addEventListener("keyup", (event) => {
+            const key = event.key.toLowerCase();
+
+            if (key in keys) {
+                keys[key] = false;
+            }
+        });
+
+        function calculatePlayerForce() {
+            playerForce.set(0, 0, 0);
+
+            if (keys.w) playerForce.z -= 1;
+            if (keys.s) playerForce.z += 1;
+            if (keys.a) playerForce.x -= 1;
+            if (keys.d) playerForce.x += 1;
+
+            if (playerForce.lengthSq() > 0) {
+                playerForce
+                    .normalize()
+                    .multiplyScalar(playerForceMagnitude);
+            }
+
+            return playerForce;
+        }
+
+        // ============================================================
+        // REINICIO
+        // ============================================================
+
+        function resetSimulation() {
+            collisionCount = 0;
+            lastCollisionInfo = "Sin colisiones todavía";
+
+            redCubeMesh.position.set(-10, 0.6, -4);
+            redCube.velocity.set(0, 0, 0);
+            redCube.acceleration.set(0, 0, 0);
+
+            sphereMesh.position.set(-8.5, 0.65, 2.2);
+            sphere.velocity.set(0, 0, 0);
+            sphere.acceleration.set(0, 0, 0);
+            sphere.addImpulse(new THREE.Vector3(8, 8, -1.8));
+
+            playerMesh.position.set(1, 0.55, 5);
+            player.velocity.set(0, 0, 0);
+            player.acceleration.set(0, 0, 0);
+
+            purpleCubeMesh.position.set(7, 0.5, -1.5);
+            purpleCube.velocity.set(-2.2, 0, 0.5);
+            purpleCube.acceleration.set(0, 0, 0);
+        }
+
+        resetSimulation();
+
+        // ============================================================
+        // HUD
+        // ============================================================
+
+        const debug = document.getElementById("debug");
+
+        function stateLabel(value) {
+            return value
+                ? '<span class="active">ACTIVA</span>'
+                : '<span class="inactive">INACTIVA</span>';
+        }
+
+        function updateDebug() {
+            const mode = restitutionModes[restitutionIndex];
+
+            debug.innerHTML = `
+                Gravedad: ${stateLabel(gravityEnabled)}<br>
+                Arrastre: ${stateLabel(dragEnabled)}<br>
+                Rozamiento: ${stateLabel(frictionEnabled)}<br>
+                Restitución global: <span class="warn">${mode.name}</span><br>
+                ${mode.description}<br><br>
+
+                Colisiones detectadas: ${collisionCount}<br>
+                Último impacto:<br>
+                <span class="warn">${lastCollisionInfo}</span><br><br>
+
+                Jugador masa: ${player.mass.toFixed(2)} kg<br>
+                Jugador velocidad: ${player.velocity.length().toFixed(2)} m/s<br>
+                Fuerza neta jugador: ${player.lastNetForce.length().toFixed(2)} N<br>
+                Fricción jugador: ${player.lastFrictionForce.length().toFixed(2)} N<br>
+                En suelo: ${player.grounded ? "Sí" : "No"}<br><br>
+
+                Detección geométrica:<br>
+                - Esfera vs AABB<br>
+                - AABB vs AABB<br>
+                - Esfera vs esfera<br><br>
+
+                Anti-clipping:<br>
+                - Substeps: ${SUB_STEPS}<br>
+                - Corrección posicional por penetración
+            `;
+        }
+
+        // ============================================================
+        // LOOP PRINCIPAL
+        // ============================================================
+
+        const clock = new THREE.Clock();
+
+        function simulationStep(dt) {
+            redCube.update(dt, redConstantForce);
+            sphere.update(dt);
+            player.update(dt, calculatePlayerForce());
+            purpleCube.update(dt);
+
+            solveCollisions();
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const dt = Math.min(clock.getDelta(), MAX_DT);
+            const subDt = dt / SUB_STEPS;
+
+            for (let i = 0; i < SUB_STEPS; i++) {
+                simulationStep(subDt);
+            }
+
+            updateArrow(
+                velocityArrow,
+                playerMesh.position,
+                player.velocity,
+                0.35,
+                4
+            );
+
+            updateArrow(
+                forceArrow,
+                playerMesh.position,
+                player.lastNetForce,
+                0.065,
+                4
+            );
+
+            updateArrow(
+                frictionArrow,
+                playerMesh.position,
+                player.lastFrictionForce,
+                0.12,
+                3
+            );
+
+            updateImpactVisual(dt);
+            updateDebug();
+
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        // ============================================================
+        // RESPONSIVE
+        // ============================================================
+
+        window.addEventListener("resize", () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        });
+    </script>
+</body>
+</html>
