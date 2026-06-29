@@ -1,0 +1,1130 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AUREN Physics Lab — Simulador guiado</title>
+  <style>
+    :root{
+      --bg:#08111a;
+      --panel:rgba(7,14,22,.86);
+      --line:rgba(255,255,255,.14);
+      --cyan:#69e6ff;
+      --green:#6fff9b;
+      --yellow:#ffd166;
+      --red:#ff6b6b;
+      --text:#f2f7fb;
+      --muted:#c7d4df;
+      --blue:#56a7ff;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font-family:Inter,Arial,sans-serif;touch-action:none}
+    canvas{display:block;position:fixed;inset:0;z-index:1}
+    .panel{
+      position:absolute;z-index:10;background:var(--panel);backdrop-filter:blur(10px);
+      border:1px solid var(--line);border-radius:14px;box-shadow:0 10px 30px rgba(0,0,0,.25)
+    }
+    #startScreen{
+      inset:0;display:flex;align-items:center;justify-content:center;z-index:40;
+      background:linear-gradient(180deg, rgba(0,0,0,.55), rgba(0,0,0,.7));
+    }
+    #startCard{max-width:760px;padding:28px 30px;width:min(92vw,760px)}
+    h1,h2,h3,p{margin:0}
+    #startCard h1{font-size:clamp(28px,4vw,44px);color:var(--cyan);margin-bottom:8px}
+    #startCard p{color:var(--muted);line-height:1.5;margin-top:10px}
+    .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:18px}
+    .pill{padding:10px 12px;border:1px solid var(--line);border-radius:12px;background:rgba(255,255,255,.03);font-size:14px;color:var(--muted)}
+    .btnRow{display:flex;flex-wrap:wrap;gap:10px;margin-top:18px}
+    button{cursor:pointer;border:none;color:var(--text);background:#13202c;padding:11px 14px;border-radius:12px;font-weight:700}
+    button.primary{background:linear-gradient(135deg,#1b6179,#2090a7);color:white}
+    button.secondary{background:#122231;border:1px solid var(--line)}
+    button.accent{background:#23412f;color:#dcffee}
+    button.warn{background:#5e4420;color:#fff3d1}
+    button.danger{background:#4f2222;color:#ffe1e1}
+    button:disabled{opacity:.4;cursor:not-allowed}
+    #hud{top:12px;left:12px;width:min(450px,calc(100vw - 24px));padding:14px;max-height:64vh;overflow:auto}
+    #hudTitle{font-size:16px;color:var(--cyan);margin-bottom:6px}
+    #moduleCounter{font-size:12px;color:var(--green);margin-bottom:10px}
+    .section{margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,.08)}
+    .section h3{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--yellow);margin-bottom:6px}
+    .section p,.section li{font-size:13px;line-height:1.45;color:var(--muted)}
+    .section ul{margin:0;padding-left:18px}
+    #formulaBox{margin-top:8px;padding:10px;border-left:3px solid var(--cyan);background:rgba(105,230,255,.08);font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;line-height:1.5;white-space:pre-line}
+    #status{top:12px;right:12px;width:min(345px,calc(100vw - 24px));padding:12px}
+    #status h3{font-size:14px;color:var(--green);margin-bottom:8px}
+    #statusText{font-size:12px;line-height:1.5;color:var(--muted);font-family:ui-monospace,SFMono-Regular,monospace}
+    #controls{left:12px;bottom:12px;padding:12px;display:flex;flex-direction:column;gap:10px;max-width:min(760px,calc(100vw - 24px))}
+    #moduleButtons,#experimentButtons{display:flex;flex-wrap:wrap;gap:8px}
+    .smallBtn{padding:9px 11px;font-size:13px}
+    #legend{bottom:12px;right:12px;padding:12px;width:min(345px,calc(100vw - 24px))}
+    #legend p{font-size:12px;color:var(--muted);line-height:1.55}
+    .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:6px;vertical-align:middle}
+    #mobilePad{position:absolute;right:12px;bottom:12px;z-index:20;display:none;gap:8px;flex-direction:column;align-items:flex-end}
+    .mobileRow{display:flex;gap:8px}
+    .touchBtn{width:58px;height:58px;border:1px solid var(--line);border-radius:14px;background:rgba(7,14,22,.88);backdrop-filter:blur(8px);font-size:20px;font-weight:800}
+    .touchBtn.wide{width:92px;font-size:13px}
+    #toggleHud{position:absolute;top:12px;right:12px;z-index:30;display:none;width:52px;height:52px;border-radius:50%;background:rgba(7,14,22,.88);border:1px solid var(--line);color:var(--cyan)}
+    #toast{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;z-index:50;padding:10px 14px;border-radius:10px;background:rgba(0,0,0,.65);border:1px solid rgba(255,255,255,.1);font-size:13px;opacity:0;pointer-events:none;transition:opacity .2s}
+    .hidden{display:none!important}
+    @media (max-width: 900px){
+      #status,#legend{width:min(320px,calc(100vw - 24px))}
+    }
+    @media (max-width: 720px){
+      #hud{max-height:46vh}
+      #mobilePad,#toggleHud{display:flex}
+      #controls{left:50%;transform:translateX(-50%);bottom:10px;width:min(96vw,780px)}
+      #legend{display:none}
+      #hud.collapsed,#status.collapsed{display:none}
+      #status{top:auto;bottom:170px;right:12px;width:min(320px,calc(100vw - 24px))}
+      #controls{padding:8px}
+    }
+  </style>
+</head>
+<body>
+  <div id="startScreen" class="hidden">
+    <div id="startCard" class="panel">
+      <h1>AUREN Physics Lab</h1>
+      <p><strong>Simulador guiado de física para videojuegos</strong>. Este proyecto final te lleva paso a paso por cinemática, fuerzas, impulsos, colisiones, detección espacial y cinemática inversa, explicando qué hacer, qué observar y qué aprendes en cada módulo.</p>
+      <div class="grid2">
+        <div class="pill">✅ <strong>Cinemática:</strong> posición, velocidad, aceleración e interpolación.</div>
+        <div class="pill">✅ <strong>Física:</strong> fuerzas, masa, gravedad, fricción y arrastre.</div>
+        <div class="pill">✅ <strong>Colisiones:</strong> broad phase, narrow phase, normal, penetración e impulso.</div>
+        <div class="pill">✅ <strong>Matemáticas:</strong> vectores, producto punto, LERP y conservación del momento.</div>
+      </div>
+      <div class="btnRow">
+        <button id="beginBtn" class="primary">Comenzar simulador</button>
+      </div>
+    </div>
+  </div>
+
+  <button id="toggleHud">HUD</button>
+
+  <aside id="hud" class="panel">
+    <div id="moduleCounter">Módulo 1 de 5</div>
+    <h2 id="hudTitle">Cinemática e interpolación</h2>
+    <div class="section">
+      <h3>Objetivo</h3>
+      <p id="goalText"></p>
+    </div>
+    <div class="section">
+      <h3>Qué hacer</h3>
+      <p id="doText"></p>
+    </div>
+    <div class="section">
+      <h3>Qué observar</h3>
+      <p id="observeText"></p>
+    </div>
+    <div class="section">
+      <h3>Qué aprendes</h3>
+      <p id="learnText"></p>
+    </div>
+    <div class="section">
+      <h3>Fórmula activa</h3>
+      <div id="formulaBox"></div>
+    </div>
+    <div class="section">
+      <h3>Aplicación en videojuegos</h3>
+      <p id="gameText"></p>
+    </div>
+    <div class="section">
+      <h3>Mini reto</h3>
+      <p id="challengeText"></p>
+    </div>
+  </aside>
+
+  <aside id="status" class="panel">
+    <h3>Telemetría</h3>
+    <div id="statusText"></div>
+  </aside>
+
+  <section id="controls" class="panel">
+    <div id="moduleButtons">
+      <button class="smallBtn primary" id="prevModuleBtn">← Módulo anterior</button>
+      <button class="smallBtn primary" id="nextModuleBtn">Siguiente módulo →</button>
+      <button class="smallBtn secondary" id="resetBtn">Reiniciar módulo</button>
+      <button class="smallBtn secondary" id="formulaBtn">Mostrar / ocultar fórmula</button>
+      <button class="smallBtn secondary" id="helpBtn">Ayuda rápida</button>
+    </div>
+    <div id="experimentButtons">
+      <button class="smallBtn accent" id="actionBtn1">Acción 1</button>
+      <button class="smallBtn warn" id="actionBtn2">Acción 2</button>
+      <button class="smallBtn secondary" id="actionBtn3">Acción 3</button>
+    </div>
+  </section>
+
+  <aside id="legend" class="panel">
+    <p><span class="dot" style="background:#56a7ff"></span>Esfera azul = proyectil / masa / restitución</p>
+    <p><span class="dot" style="background:#ff6b6b"></span>Cubo rojo = fuerza constante</p>
+    <p><span class="dot" style="background:#6fff9b"></span>Cubo verde = jugador controlable</p>
+    <p><span class="dot" style="background:#ffd166"></span>Amarillo = normal de impacto / objetivo</p>
+    <p><span class="dot" style="background:#ff4d6d"></span>Rojo intenso = impulso / respuesta de colisión</p>
+  </aside>
+
+  <div id="mobilePad">
+    <div class="mobileRow">
+      <button class="touchBtn wide" data-special="action1">A1</button>
+      <button class="touchBtn wide" data-special="action2">A2</button>
+      <button class="touchBtn wide" data-special="reset">RST</button>
+    </div>
+    <div class="mobileRow"><button class="touchBtn" data-key="w">▲</button></div>
+    <div class="mobileRow">
+      <button class="touchBtn" data-key="a">◀</button>
+      <button class="touchBtn" data-special="jump">●</button>
+      <button class="touchBtn" data-key="d">▶</button>
+    </div>
+    <div class="mobileRow"><button class="touchBtn" data-key="s">▼</button></div>
+  </div>
+
+  <div id="toast"></div>
+
+  <script type="module">
+    import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js';
+
+    // ============================================================
+    // CONFIGURACIÓN BÁSICA
+    // ============================================================
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x08111a);
+    scene.fog = new THREE.Fog(0x08111a, 28, 70);
+
+    const camera = new THREE.PerspectiveCamera(58, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 14, 24);
+    camera.lookAt(0, 1.5, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+
+    scene.add(new THREE.HemisphereLight(0x9bd9ff, 0x15212b, 1.45));
+    const dirLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    dirLight.position.set(10, 16, 10);
+    dirLight.castShadow = true;
+    dirLight.shadow.mapSize.set(2048, 2048);
+    dirLight.shadow.camera.left = -22;
+    dirLight.shadow.camera.right = 22;
+    dirLight.shadow.camera.top = 22;
+    dirLight.shadow.camera.bottom = -22;
+    scene.add(dirLight);
+
+    const floor = new THREE.Mesh(
+      new THREE.PlaneGeometry(42, 42),
+      new THREE.MeshStandardMaterial({ color: 0x101922, roughness: 0.94, metalness: 0.05 })
+    );
+    floor.rotation.x = -Math.PI / 2;
+    floor.receiveShadow = true;
+    scene.add(floor);
+
+    const grid = new THREE.GridHelper(42, 42, 0x3b7286, 0x203240);
+    grid.position.y = 0.01;
+    scene.add(grid);
+
+    const labTitle = makeTextPlane('AUREN PHYSICS LAB', '#69e6ff');
+    labTitle.position.set(0, 5.8, -12);
+    scene.add(labTitle);
+
+    // ============================================================
+    // UTILIDADES
+    // ============================================================
+    function makeTextPlane(text, color = '#ffffff', bg = 'rgba(0,0,0,0.0)', pad = 24, fontSize = 46) {
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.font = `700 ${fontSize}px Arial`;
+      const w = Math.ceil(ctx.measureText(text).width + pad * 2);
+      const h = Math.ceil(fontSize * 1.7 + pad * 2);
+      canvas.width = w; canvas.height = h;
+      ctx.fillStyle = bg;
+      ctx.fillRect(0, 0, w, h);
+      ctx.font = `700 ${fontSize}px Arial`;
+      ctx.fillStyle = color;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(text, w / 2, h / 2);
+      const tex = new THREE.CanvasTexture(canvas);
+      const mat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const sprite = new THREE.Sprite(mat);
+      sprite.scale.set(w / 160, h / 160, 1);
+      return sprite;
+    }
+
+    function showToast(message){
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.style.opacity = '1';
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(()=> toast.style.opacity = '0', 2000);
+    }
+
+    function clamp(v,min,max){ return Math.max(min, Math.min(max, v)); }
+
+    // ============================================================
+    // CUERPOS FÍSICOS
+    // ============================================================
+    const GRAVITY = new THREE.Vector3(0, -9.81, 0);
+    const WORLD_LIMIT = 18;
+    const FIXED_Y_OFFSET = 0.02;
+    const SUBSTEPS = 5;
+    const MAX_DT = 1/30;
+
+    class PhysicsBody {
+      constructor(mesh, options={}){
+        this.mesh = mesh;
+        this.name = options.name ?? 'Body';
+        this.shape = options.shape ?? 'sphere';
+        this.mass = options.mass ?? 1;
+        this.inverseMass = this.mass > 0 ? 1 / this.mass : 0;
+        this.radius = options.radius ?? 0.5;
+        this.halfSize = options.halfSize ?? new THREE.Vector3(0.5,0.5,0.5);
+        this.dragCoefficient = options.dragCoefficient ?? 0.05;
+        this.staticFriction = options.staticFriction ?? 0.45;
+        this.kineticFriction = options.kineticFriction ?? 0.30;
+        this.restitution = options.restitution ?? 0.5;
+        this.velocity = options.velocity?.clone() ?? new THREE.Vector3();
+        this.acceleration = new THREE.Vector3();
+        this.forceAccumulator = new THREE.Vector3();
+        this.lastNetForce = new THREE.Vector3();
+        this.lastDragForce = new THREE.Vector3();
+        this.lastFrictionForce = new THREE.Vector3();
+        this.grounded = false;
+        this.isPlayer = options.isPlayer ?? false;
+        this.active = true;
+        this.fixHeight();
+      }
+      fixHeight(){
+        this.mesh.position.y = (this.shape === 'sphere' ? this.radius : this.halfSize.y) + FIXED_Y_OFFSET;
+      }
+      beginStep(){
+        this.forceAccumulator.set(0,0,0);
+        this.lastDragForce.set(0,0,0);
+        this.lastFrictionForce.set(0,0,0);
+        if(simState.gravityEnabled) this.addForce(GRAVITY.clone().multiplyScalar(this.mass));
+      }
+      addForce(force){ this.forceAccumulator.add(force); }
+      addImpulse(impulse){ if(this.inverseMass>0) this.velocity.addScaledVector(impulse, this.inverseMass); }
+      applyAirDrag(){
+        if(!simState.dragEnabled || this.velocity.lengthSq() < 0.0001) return;
+        const speed = this.velocity.length();
+        this.lastDragForce.copy(this.velocity).multiplyScalar(-this.dragCoefficient * speed);
+        this.addForce(this.lastDragForce);
+      }
+      applyGroundFriction(dt){
+        if(!simState.frictionEnabled || !this.grounded) return;
+        const hv = new THREE.Vector3(this.velocity.x,0,this.velocity.z);
+        const ext = new THREE.Vector3(this.forceAccumulator.x,0,this.forceAccumulator.z);
+        const normalForce = simState.gravityEnabled ? this.mass * Math.abs(GRAVITY.y) : 0;
+        const speed = hv.length();
+        const applied = ext.length();
+        const maxStatic = this.staticFriction * normalForce;
+        if(speed < 0.04 && applied <= maxStatic){
+          this.lastFrictionForce.copy(ext).negate();
+          this.velocity.x = 0; this.velocity.z = 0;
+          this.addForce(this.lastFrictionForce);
+          return;
+        }
+        let dir;
+        if(speed >= 0.04) dir = hv.normalize().negate();
+        else if(applied > 0) dir = ext.normalize().negate();
+        else return;
+        const kinetic = this.kineticFriction * normalForce;
+        const stopping = speed > 0 ? (this.mass * speed) / Math.max(dt, 0.0001) : kinetic;
+        this.lastFrictionForce.copy(dir).multiplyScalar(Math.min(kinetic, stopping));
+        this.addForce(this.lastFrictionForce);
+      }
+      integrate(dt){
+        if(this.inverseMass <= 0) return;
+        this.lastNetForce.copy(this.forceAccumulator);
+        this.acceleration.copy(this.forceAccumulator).multiplyScalar(this.inverseMass);
+        this.velocity.addScaledVector(this.acceleration, dt);
+        const maxSpeed = this.isPlayer ? 11 : 20;
+        if(this.velocity.length() > maxSpeed) this.velocity.setLength(maxSpeed);
+        this.mesh.position.addScaledVector(this.velocity, dt);
+        this.resolveFloorCollision();
+        this.resolveWorldLimits();
+        this.forceAccumulator.set(0,0,0);
+      }
+      resolveFloorCollision(){
+        const h = (this.shape === 'sphere' ? this.radius : this.halfSize.y) + FIXED_Y_OFFSET;
+        if(this.mesh.position.y <= h){
+          this.mesh.position.y = h;
+          if(this.velocity.y < 0){
+            this.velocity.y = Math.abs(this.velocity.y) > 0.6 ? -this.velocity.y * this.restitution : 0;
+          }
+          this.grounded = true;
+        } else this.grounded = false;
+      }
+      resolveWorldLimits(){
+        const ex = this.shape === 'sphere' ? this.radius : this.halfSize.x;
+        const ez = this.shape === 'sphere' ? this.radius : this.halfSize.z;
+        const minX = -WORLD_LIMIT + ex, maxX = WORLD_LIMIT - ex;
+        const minZ = -WORLD_LIMIT + ez, maxZ = WORLD_LIMIT - ez;
+        if(this.mesh.position.x < minX){ this.mesh.position.x = minX; this.velocity.x *= -simState.globalRestitution; }
+        if(this.mesh.position.x > maxX){ this.mesh.position.x = maxX; this.velocity.x *= -simState.globalRestitution; }
+        if(this.mesh.position.z < minZ){ this.mesh.position.z = minZ; this.velocity.z *= -simState.globalRestitution; }
+        if(this.mesh.position.z > maxZ){ this.mesh.position.z = maxZ; this.velocity.z *= -simState.globalRestitution; }
+      }
+      update(dt, externalForce=null){
+        if(!this.active) return;
+        this.beginStep();
+        if(externalForce) this.addForce(externalForce);
+        this.applyAirDrag();
+        this.applyGroundFriction(dt);
+        this.integrate(dt);
+      }
+      getAABB(){
+        const p = this.mesh.position;
+        if(this.shape === 'sphere') return {minX:p.x-this.radius,maxX:p.x+this.radius,minZ:p.z-this.radius,maxZ:p.z+this.radius};
+        return {minX:p.x-this.halfSize.x,maxX:p.x+this.halfSize.x,minZ:p.z-this.halfSize.z,maxZ:p.z+this.halfSize.z};
+      }
+    }
+
+    const simState = {
+      gravityEnabled: true,
+      dragEnabled: true,
+      frictionEnabled: true,
+      globalRestitution: 0.55,
+      restitutionModes:[
+        {name:'Elástica', value:1.0},
+        {name:'Inelástica', value:0.55},
+        {name:'Muy inelástica', value:0.15}
+      ],
+      restitutionIndex: 1,
+      collisionCount: 0,
+      lastCollisionInfo:'Sin colisiones todavía',
+      broadPhasePairs: 0,
+      narrowPhaseHits: 0,
+      contactState: 'Esperando experimento',
+      autoLoopCollision: true,
+      moduleTimer: 0,
+    };
+
+    // ============================================================
+    // OBJETOS PRINCIPALES
+    // ============================================================
+    const bodies = [];
+    const activeBodies = new Set();
+
+    function createBodyMeshSphere(r,color){
+      const mesh = new THREE.Mesh(new THREE.SphereGeometry(r, 28, 28), new THREE.MeshStandardMaterial({color, roughness:0.28, metalness:0.15}));
+      mesh.castShadow = true; scene.add(mesh); return mesh;
+    }
+    function createBodyMeshBox(x,y,z,color){
+      const mesh = new THREE.Mesh(new THREE.BoxGeometry(x,y,z), new THREE.MeshStandardMaterial({color, roughness:0.35, metalness:0.18}));
+      mesh.castShadow = true; scene.add(mesh); return mesh;
+    }
+
+    const redCube = new PhysicsBody(createBodyMeshBox(1.2,1.2,1.2,0xff5a5a), {
+      name:'Cubo rojo', shape:'aabb', mass:2, halfSize:new THREE.Vector3(0.6,0.6,0.6), dragCoefficient:0.08, staticFriction:0.32, kineticFriction:0.22, restitution:0.35
+    });
+    const blueSphere = new PhysicsBody(createBodyMeshSphere(0.68,0x4ea0ff), {
+      name:'Esfera azul', shape:'sphere', mass:1, radius:0.68, dragCoefficient:0.06, staticFriction:0.30, kineticFriction:0.20, restitution:0.72
+    });
+    const greenPlayer = new PhysicsBody(createBodyMeshBox(1.1,1.1,1.1,0x6fff9b), {
+      name:'Jugador verde', shape:'aabb', mass:3, halfSize:new THREE.Vector3(0.55,0.55,0.55), dragCoefficient:0.10, staticFriction:0.56, kineticFriction:0.42, restitution:0.12, isPlayer:true
+    });
+    const purpleBlock = new PhysicsBody(createBodyMeshBox(1.6,1.0,1.6,0x9b63ff), {
+      name:'Prisma morado', shape:'aabb', mass:5, halfSize:new THREE.Vector3(0.8,0.5,0.8), dragCoefficient:0.075, staticFriction:0.42, kineticFriction:0.28, restitution:0.40
+    });
+    const orangeSphere = new PhysicsBody(createBodyMeshSphere(0.8,0xffb347), {
+      name:'Esfera naranja', shape:'sphere', mass:1.8, radius:0.8, dragCoefficient:0.05, staticFriction:0.28, kineticFriction:0.18, restitution:0.85
+    });
+    [redCube, blueSphere, greenPlayer, purpleBlock, orangeSphere].forEach(b=> bodies.push(b));
+
+    // Plataforma móvil módulo 1
+    const platform = new THREE.Mesh(
+      new THREE.BoxGeometry(4,0.5,4),
+      new THREE.MeshStandardMaterial({color:0x32b7d4, roughness:0.5, metalness:0.18})
+    );
+    platform.castShadow = true; platform.receiveShadow = true; platform.position.set(-6,0.25,-3); scene.add(platform);
+    const pointA = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), new THREE.MeshBasicMaterial({color:0x6fff9b}));
+    const pointB = new THREE.Mesh(new THREE.SphereGeometry(0.22, 16, 16), new THREE.MeshBasicMaterial({color:0xffd166}));
+    pointA.position.set(-10,0.8,-3); pointB.position.set(-2,0.8,-3); scene.add(pointA, pointB);
+
+    // Helpers módulo 4 (AABB visual)
+    const boxHelpers = new Map();
+    function ensureHelper(body){
+      if(!boxHelpers.has(body)){
+        const helper = new THREE.Box3Helper(new THREE.Box3(), 0x69e6ff);
+        helper.visible = false; scene.add(helper); boxHelpers.set(body, helper);
+      }
+      return boxHelpers.get(body);
+    }
+    bodies.forEach(ensureHelper);
+
+    // Flechas de vectores
+    const velocityArrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(), 1, 0x56a7ff);
+    const forceArrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(), 1, 0xffae42);
+    const frictionArrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(), 1, 0xff4d6d);
+    const impactNormalArrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(), 1, 0xffd166);
+    const impulseArrow = new THREE.ArrowHelper(new THREE.Vector3(1,0,0), new THREE.Vector3(), 1, 0xff4d6d);
+    [velocityArrow, forceArrow, frictionArrow, impactNormalArrow, impulseArrow].forEach(a => {a.visible=false; scene.add(a);});
+    const contactMarker = new THREE.Mesh(new THREE.SphereGeometry(0.16,16,16), new THREE.MeshBasicMaterial({color:0xffd166}));
+    contactMarker.visible = false; scene.add(contactMarker);
+    let impactVisualTimer = 0;
+
+    function updateArrow(arrow, origin, vector, scale, maxLength, y=0.9){
+      arrow.position.copy(origin); arrow.position.y += y;
+      const mag = vector.length();
+      if(mag < 0.01){ arrow.visible = false; return; }
+      arrow.visible = true; arrow.setDirection(vector.clone().normalize());
+      arrow.setLength(Math.min(mag*scale,maxLength),0.28,0.14);
+    }
+
+    function showImpactVector(contactPoint, normal, impulseMagnitude){
+      impactVisualTimer = 0.4;
+      contactMarker.visible = true; contactMarker.position.copy(contactPoint); contactMarker.position.y = 0.25;
+      impactNormalArrow.visible = true; impactNormalArrow.position.copy(contactPoint); impactNormalArrow.position.y = 0.45;
+      impactNormalArrow.setDirection(normal.clone().normalize()); impactNormalArrow.setLength(2.8,0.35,0.16);
+      impulseArrow.visible = true; impulseArrow.position.copy(contactPoint); impulseArrow.position.y = 0.85;
+      impulseArrow.setDirection(normal.clone().normalize()); impulseArrow.setLength(Math.min(Math.abs(impulseMagnitude)*0.25,4),0.35,0.16);
+    }
+
+    // ============================================================
+    // CINEMÁTICA INVERSA — brazo 2 segmentos en plano XZ
+    // ============================================================
+    const armGroup = new THREE.Group(); scene.add(armGroup);
+    const armBase = new THREE.Mesh(new THREE.CylinderGeometry(0.35,0.4,0.6,18), new THREE.MeshStandardMaterial({color:0x9aa6b2}));
+    armBase.position.set(8,0.3,5); armBase.castShadow = true; armGroup.add(armBase);
+    const link1 = new THREE.Mesh(new THREE.BoxGeometry(3.0,0.25,0.25), new THREE.MeshStandardMaterial({color:0x69e6ff}));
+    link1.castShadow = true; armGroup.add(link1);
+    const joint1Marker = new THREE.Mesh(new THREE.SphereGeometry(0.18,16,16), new THREE.MeshBasicMaterial({color:0xffffff})); armGroup.add(joint1Marker);
+    const link2 = new THREE.Mesh(new THREE.BoxGeometry(2.4,0.22,0.22), new THREE.MeshStandardMaterial({color:0x6fff9b}));
+    link2.castShadow = true; armGroup.add(link2);
+    const endEffector = new THREE.Mesh(new THREE.SphereGeometry(0.18,16,16), new THREE.MeshBasicMaterial({color:0xff4d6d})); armGroup.add(endEffector);
+    const ikTarget = new THREE.Mesh(new THREE.SphereGeometry(0.26,16,16), new THREE.MeshBasicMaterial({color:0xffd166})); scene.add(ikTarget);
+    const basePos = new THREE.Vector3(8, 1.3, 5);
+    let ikAutoMove = true;
+    let ikTargetAngle = 0;
+    const l1 = 3.0, l2 = 2.4;
+
+    function updateIK(){
+      const dx = ikTarget.position.x - basePos.x;
+      const dz = ikTarget.position.z - basePos.z;
+      const dist = Math.min(Math.sqrt(dx*dx + dz*dz), l1 + l2 - 0.001);
+      const targetAngle = Math.atan2(dz, dx);
+      const cosElbow = clamp((dist*dist - l1*l1 - l2*l2) / (2*l1*l2), -1, 1);
+      const elbow = Math.acos(cosElbow);
+      const shoulder = targetAngle - Math.atan2(l2 * Math.sin(elbow), l1 + l2 * Math.cos(elbow));
+      const joint1 = new THREE.Vector3(basePos.x + Math.cos(shoulder)*l1, basePos.y, basePos.z + Math.sin(shoulder)*l1);
+      const eff = new THREE.Vector3(joint1.x + Math.cos(shoulder + elbow)*l2, basePos.y, joint1.z + Math.sin(shoulder + elbow)*l2);
+      link1.position.set((basePos.x + joint1.x)/2, basePos.y, (basePos.z + joint1.z)/2);
+      link1.rotation.y = -shoulder;
+      joint1Marker.position.copy(joint1);
+      link2.position.set((joint1.x + eff.x)/2, basePos.y, (joint1.z + eff.z)/2);
+      link2.rotation.y = -(shoulder + elbow);
+      endEffector.position.copy(eff);
+    }
+
+    // ============================================================
+    // COLISIONES
+    // ============================================================
+    function detectCollision(a,b){
+      if(!a.active || !b.active) return null;
+      const broadHit = broadPhaseOverlap(a, b);
+      simState.broadPhasePairs++;
+      if(!broadHit) return null;
+      if(a.shape === 'sphere' && b.shape === 'sphere') return detectSphereSphere(a,b);
+      if(a.shape === 'aabb' && b.shape === 'aabb') return detectAABBAABB(a,b);
+      if(a.shape === 'sphere' && b.shape === 'aabb') return detectSphereAABB(a,b);
+      if(a.shape === 'aabb' && b.shape === 'sphere'){
+        const c = detectSphereAABB(b,a);
+        if(!c) return null;
+        c.normal.multiplyScalar(-1);
+        return {a,b,normal:c.normal,penetration:c.penetration,contactPoint:c.contactPoint};
+      }
+      return null;
+    }
+
+    function broadPhaseOverlap(a,b){
+      const A = a.getAABB(), B = b.getAABB();
+      return !(A.maxX < B.minX || A.minX > B.maxX || A.maxZ < B.minZ || A.minZ > B.maxZ);
+    }
+
+    function detectSphereSphere(a,b){
+      // Detección en plano XZ para que el experimento sea claro y no falle por pequeñas diferencias de altura.
+      const delta = new THREE.Vector3(
+        b.mesh.position.x - a.mesh.position.x,
+        0,
+        b.mesh.position.z - a.mesh.position.z
+      );
+      const r = a.radius + b.radius;
+      const d2 = delta.lengthSq();
+      if(d2 >= r*r) return null;
+      simState.narrowPhaseHits++;
+      const d = Math.sqrt(d2);
+      const normal = d > 0.0001 ? delta.clone().multiplyScalar(1/d) : new THREE.Vector3(1,0,0);
+      const penetration = r - d;
+      const contactPoint = a.mesh.position.clone().addScaledVector(normal, a.radius - penetration*0.5);
+      contactPoint.y = 0.35;
+      return {a,b,normal,penetration,contactPoint};
+    }
+
+    function detectAABBAABB(a,b){
+      const A = a.getAABB(), B = b.getAABB();
+      const overlapX = Math.min(A.maxX, B.maxX) - Math.max(A.minX, B.minX);
+      const overlapZ = Math.min(A.maxZ, B.maxZ) - Math.max(A.minZ, B.minZ);
+      if(overlapX <= 0 || overlapZ <= 0) return null;
+      simState.narrowPhaseHits++;
+      const dx = b.mesh.position.x - a.mesh.position.x;
+      const dz = b.mesh.position.z - a.mesh.position.z;
+      let normal, penetration;
+      if(overlapX < overlapZ){ normal = new THREE.Vector3(Math.sign(dx)||1,0,0); penetration = overlapX; }
+      else { normal = new THREE.Vector3(0,0,Math.sign(dz)||1); penetration = overlapZ; }
+      const contactPoint = new THREE.Vector3((a.mesh.position.x+b.mesh.position.x)/2, Math.max(a.mesh.position.y,b.mesh.position.y), (a.mesh.position.z+b.mesh.position.z)/2);
+      return {a,b,normal,penetration,contactPoint};
+    }
+
+    function detectSphereAABB(sphere, boxBody){
+      const sc = sphere.mesh.position; const box = boxBody.getAABB();
+      const cx = clamp(sc.x, box.minX, box.maxX);
+      const cz = clamp(sc.z, box.minZ, box.maxZ);
+      const cp = new THREE.Vector3(cx, sc.y, cz);
+      const delta = new THREE.Vector3().subVectors(sc, cp); delta.y = 0;
+      const d2 = delta.lengthSq();
+      if(d2 > sphere.radius*sphere.radius) return null;
+      simState.narrowPhaseHits++;
+      let normal, penetration;
+      if(d2 > 0.0001){
+        const d = Math.sqrt(d2);
+        normal = delta.clone().normalize().multiplyScalar(-1);
+        penetration = sphere.radius - d;
+      } else {
+        const dx = boxBody.mesh.position.x - sphere.mesh.position.x;
+        const dz = boxBody.mesh.position.z - sphere.mesh.position.z;
+        const overlapX = boxBody.halfSize.x + sphere.radius - Math.abs(dx);
+        const overlapZ = boxBody.halfSize.z + sphere.radius - Math.abs(dz);
+        if(overlapX < overlapZ){ normal = new THREE.Vector3(Math.sign(dx)||1,0,0); penetration = overlapX; }
+        else { normal = new THREE.Vector3(0,0,Math.sign(dz)||1); penetration = overlapZ; }
+      }
+      return {a:sphere,b:boxBody,normal,penetration,contactPoint:cp};
+    }
+
+    function resolveCollision(c){
+      const {a,b,normal,penetration,contactPoint} = c;
+      const invSum = a.inverseMass + b.inverseMass;
+      if(invSum <= 0) return;
+      const correctionPercent = 0.82, penetrationSlop = 0.001;
+      const correctionMag = Math.max(penetration - penetrationSlop, 0) / invSum * correctionPercent;
+      const correction = normal.clone().multiplyScalar(correctionMag);
+      a.mesh.position.addScaledVector(correction, -a.inverseMass);
+      b.mesh.position.addScaledVector(correction, b.inverseMass);
+      a.fixHeight(); b.fixHeight();
+      const relVel = new THREE.Vector3().subVectors(b.velocity, a.velocity);
+      const velAlongNormal = relVel.dot(normal);
+      if(velAlongNormal > 0) return;
+      const e = Math.min(simState.globalRestitution, a.restitution, b.restitution);
+      const impulseMagnitude = -(1 + e) * velAlongNormal / invSum;
+      const impulse = normal.clone().multiplyScalar(impulseMagnitude);
+      a.velocity.addScaledVector(impulse, -a.inverseMass);
+      b.velocity.addScaledVector(impulse, b.inverseMass);
+      simState.collisionCount++;
+      simState.contactState = 'Contacto detectado y respuesta por impulso aplicada';
+      simState.lastCollisionInfo = `${a.name} ↔ ${b.name}\npenetración=${penetration.toFixed(3)}\nJ=${impulseMagnitude.toFixed(3)} N·s\nnormal=(${normal.x.toFixed(2)},${normal.z.toFixed(2)})\ne=${e.toFixed(2)}`;
+      showImpactVector(contactPoint, normal, impulseMagnitude);
+    }
+
+    function solveCollisions(){
+      for(let i=0;i<bodies.length;i++){
+        if(!bodies[i].active) continue;
+        for(let j=i+1;j<bodies.length;j++){
+          if(!bodies[j].active) continue;
+          const c = detectCollision(bodies[i], bodies[j]);
+          if(c) resolveCollision(c);
+        }
+      }
+    }
+
+    // ============================================================
+    // MÓDULOS GUIADOS
+    // ============================================================
+    const modules = [
+      {
+        id:'kinematics',
+        title:'Cinemática e interpolación',
+        goal:'Comprender cómo cambian la posición y la orientación de un objeto con el tiempo, y por qué la interpolación suaviza el movimiento.',
+        do:'Presiona “Activar interpolación” y observa la plataforma moverse entre el punto A y el punto B. Luego desactívala para comparar un desplazamiento rígido.',
+        observe:'Fíjate en la diferencia entre un movimiento suave y uno brusco. Observa también cómo el tiempo t genera posiciones intermedias entre dos puntos.',
+        learn:'Aprendes que la cinemática describe el movimiento sin analizar fuerzas, y que LERP es clave para animaciones suaves y controladas.',
+        formula:'p(t) = p0 + t(p1 - p0)\n\nx = x0 + vt\n\nv = v0 + at',
+        game:'Se usa en plataformas móviles, cámaras, puertas automáticas, enemigos patrulla, UI animada y movimiento procedural.',
+        challenge:'Activa la interpolación y deja que la plataforma llegue al otro extremo sin saltos visuales.',
+        action1:'Activar interpolación',
+        action2:'Movimiento rígido',
+        action3:'Invertir dirección'
+      },
+      {
+        id:'forces',
+        title:'Fuerzas, masa e impulsos',
+        goal:'Entender la relación entre fuerza, masa, aceleración e impulso en un entorno físico para videojuegos.',
+        do:'Usa WASD para mover el cubo verde, presiona “Lanzar esfera” y “Impulso al cubo rojo”. Compara la aceleración de cada objeto.',
+        observe:'Mira cómo la misma fuerza produce distintas respuestas según la masa. Observa que una fuerza cambia el movimiento gradualmente, mientras que un impulso lo cambia de inmediato.',
+        learn:'Aprendes la Segunda Ley de Newton y la diferencia entre aplicar una fuerza continua y un impulso instantáneo.',
+        formula:'ΣF = ma\n\na = F / m\n\nJ = mΔv',
+        game:'Sirve para movimiento de personajes, proyectiles, vehículos, empujes, explosiones, plataformas físicas y objetos interactivos.',
+        challenge:'Haz que la esfera recorra una trayectoria visible y compara su respuesta con el cubo rojo.',
+        action1:'Lanzar esfera', action2:'Impulso al cubo rojo', action3:'Alternar gravedad'
+      },
+      {
+        id:'collisions',
+        title:'Colisiones y rebote',
+        goal:'Comprender cómo se calcula la respuesta física después de un choque entre objetos con distintas masas y restitución.',
+        do:'Al entrar al módulo las esferas ya se acercan para chocar. Presiona “Preparar choque” para repetirlo y “Cambiar restitución” para comparar rebote elástico e inelástico.',
+        observe:'Mira el vector amarillo (normal) y el rojo (impulso). Observa cómo cambia el rebote al pasar de una colisión elástica a una inelástica.',
+        learn:'Aprendes conservación del momento lineal, coeficiente de restitución y corrección de penetración anti-clipping.',
+        formula:'m1v1 + m2v2 = m1v1\' + m2v2\'\n\nJ = -(1 + e)(vrel · n) / (1/m1 + 1/m2)',
+        game:'Se usa en rebotes, choques de vehículos, cajas físicas, enemigos empujables, explosiones y objetos de puzzle.',
+        challenge:'Cambia la restitución y explica cuál colisión conserva más energía visible.',
+        action1:'Preparar choque', action2:'Cambiar restitución', action3:'Choque angular'
+      },
+      {
+        id:'detection',
+        title:'Detección espacial: Broad Phase y Narrow Phase',
+        goal:'Visualizar cómo un motor primero filtra pares candidatos y después calcula el contacto real solo cuando es necesario.',
+        do:'Las AABB se muestran desde el inicio. Presiona “Lanzar prueba” y observa cómo primero se filtran candidatos en broad phase y luego se calcula el contacto real en narrow phase.',
+        observe:'Las cajas envolventes simplifican el problema. No todas las superposiciones en broad phase terminan en colisión real: eso genera falsos positivos útiles.',
+        learn:'Aprendes la diferencia entre broad phase, narrow phase, AABB, esfera y la razón de usar volúmenes simples para optimizar.',
+        formula:'Broad Phase: descartar objetos lejanos\n\nNarrow Phase: calcular punto de contacto, normal y penetración',
+        game:'Es esencial en juegos con muchos objetos, battle royale, shooters, sandbox, simuladores y motores de físicas en tiempo real.',
+        challenge:'Activa AABB y observa cómo se filtran los pares antes de llegar a la colisión precisa.',
+        action1:'Mostrar AABB', action2:'Lanzar prueba', action3:'Ocultar AABB'
+      },
+      {
+        id:'ik',
+        title:'Cinemática inversa y brazo articulado',
+        goal:'Comprender cómo una cadena articulada ajusta sus ángulos para alcanzar una posición objetivo.',
+        do:'Presiona “Mover objetivo” o activa el movimiento automático. Observa cómo el brazo de dos segmentos adapta sus articulaciones.',
+        observe:'Si conoces el objetivo final y calculas ángulos, estás usando cinemática inversa. Si conoces ángulos y obtienes la posición, es cinemática directa.',
+        learn:'Aprendes la diferencia entre cinemática directa e inversa y cómo se aplican en animación procedural.',
+        formula:'Cinemática directa: ángulos → posición final\n\nCinemática inversa: objetivo → ángulos articulares',
+        game:'Se usa para colocar manos, pies, tentáculos, brazos robóticos, apuntado procedural y criaturas articuladas.',
+        challenge:'Mueve el objetivo a varias posiciones y observa si el efector final logra alcanzarlo.',
+        action1:'Mover objetivo', action2:'Auto objetivo', action3:'Objetivo aleatorio'
+      }
+    ];
+
+    let currentModule = 0;
+    const moduleState = {
+      interpolationEnabled: false,
+      platformDirection: 1,
+      platformT: 0,
+      platformSpeed: 0.28,
+      showAABB: false,
+      lastRigidJump: false,
+      collisionMode: 'front'
+    };
+
+    function setBodyVisible(body, visible){
+      body.active = visible;
+      body.mesh.visible = visible;
+      const helper = boxHelpers.get(body); if(helper) helper.visible = visible && moduleState.showAABB && currentModule === 3;
+    }
+
+    function hideAllBodies(){ bodies.forEach(b=> setBodyVisible(b,false)); }
+    function hideModuleExtras(){
+      platform.visible = pointA.visible = pointB.visible = false;
+      armGroup.visible = false; ikTarget.visible = false;
+      [velocityArrow, forceArrow, frictionArrow, impactNormalArrow, impulseArrow].forEach(a=>a.visible=false);
+      contactMarker.visible = false;
+      moduleState.showAABB = false;
+      boxHelpers.forEach(h => h.visible = false);
+      impactVisualTimer = 0;
+    }
+
+    function activateModule(index){
+      currentModule = (index + modules.length) % modules.length;
+      hideAllBodies(); hideModuleExtras();
+      const mod = modules[currentModule];
+      document.getElementById('moduleCounter').textContent = `Módulo ${currentModule + 1} de ${modules.length}`;
+      document.getElementById('hudTitle').textContent = mod.title;
+      document.getElementById('goalText').textContent = mod.goal;
+      document.getElementById('doText').textContent = mod.do;
+      document.getElementById('observeText').textContent = mod.observe;
+      document.getElementById('learnText').textContent = mod.learn;
+      document.getElementById('formulaBox').textContent = mod.formula;
+      document.getElementById('gameText').textContent = mod.game;
+      document.getElementById('challengeText').textContent = mod.challenge;
+      document.getElementById('actionBtn1').textContent = mod.action1;
+      document.getElementById('actionBtn2').textContent = mod.action2;
+      document.getElementById('actionBtn3').textContent = mod.action3;
+      document.querySelector('[data-special="action1"]').textContent = 'A1';
+      document.querySelector('[data-special="action2"]').textContent = 'A2';
+      resetCurrentModule();
+    }
+
+    function resetCommonStates(){
+      simState.collisionCount = 0;
+      simState.broadPhasePairs = 0;
+      simState.narrowPhaseHits = 0;
+      simState.lastCollisionInfo = 'Sin colisiones todavía';
+      simState.contactState = 'Esperando experimento';
+      simState.moduleTimer = 0;
+      simState.gravityEnabled = true;
+      simState.dragEnabled = true;
+      simState.frictionEnabled = true;
+      impactVisualTimer = 0;
+      contactMarker.visible = false;
+      [impactNormalArrow, impulseArrow].forEach(a => a.visible = false);
+    }
+
+    function resetCurrentModule(){
+      resetCommonStates();
+      hideAllBodies(); hideModuleExtras();
+      const mod = modules[currentModule].id;
+      if(mod === 'kinematics'){
+        platform.visible = pointA.visible = pointB.visible = true;
+        moduleState.interpolationEnabled = false;
+        moduleState.platformDirection = 1;
+        moduleState.platformT = 0;
+        platform.position.set(-10,0.25,-3);
+        showToast('Módulo 1 listo: cinemática e interpolación');
+      }
+      if(mod === 'forces'){
+        setBodyVisible(redCube,true); setBodyVisible(blueSphere,true); setBodyVisible(greenPlayer,true);
+        redCube.mesh.position.set(-10, 0.62, -4); redCube.velocity.set(0,0,0); redCube.acceleration.set(0,0,0);
+        blueSphere.mesh.position.set(-8.5, 0.7, 2.2); blueSphere.velocity.set(0,0,0); blueSphere.acceleration.set(0,0,0);
+        greenPlayer.mesh.position.set(2, 0.57, 5); greenPlayer.velocity.set(0,0,0); greenPlayer.acceleration.set(0,0,0);
+        showToast('Módulo 2 listo: prueba fuerzas e impulsos');
+      }
+      if(mod === 'collisions'){
+        setBodyVisible(blueSphere,true); setBodyVisible(orangeSphere,true); setBodyVisible(greenPlayer,true);
+        // Se colocan cerca y con velocidades opuestas para que el choque ocurra en menos de 1 segundo.
+        blueSphere.mesh.position.set(-4.2, 0.7, 0); blueSphere.velocity.set(5.2,0,0);
+        orangeSphere.mesh.position.set(4.2, 0.82, 0); orangeSphere.velocity.set(-2.4,0,0);
+        greenPlayer.mesh.position.set(0,0.57,5.5); greenPlayer.velocity.set(0,0,0);
+        moduleState.collisionMode = 'front';
+        simState.gravityEnabled = false;
+        simState.dragEnabled = false;
+        simState.frictionEnabled = false;
+        simState.contactState = 'Esferas acercándose para choque frontal';
+        showToast('Módulo 3 listo: las esferas chocan automáticamente');
+      }
+      if(mod === 'detection'){
+        setBodyVisible(redCube,true); setBodyVisible(blueSphere,true); setBodyVisible(purpleBlock,true); setBodyVisible(orangeSphere,true);
+        // Pares colocados cerca para que se observe broad phase, narrow phase y respuesta sin esperar demasiado.
+        redCube.mesh.position.set(-5.2, 0.62, -3); redCube.velocity.set(3.4,0,0);
+        purpleBlock.mesh.position.set(1.2, 0.52, -3); purpleBlock.velocity.set(0,0,0);
+        blueSphere.mesh.position.set(-4.8,0.7,3.2); blueSphere.velocity.set(4.2,0,-0.4);
+        orangeSphere.mesh.position.set(1.0,0.82,2.7); orangeSphere.velocity.set(0,0,0);
+        moduleState.showAABB = true;
+        simState.gravityEnabled = false;
+        simState.dragEnabled = false;
+        simState.frictionEnabled = false;
+        simState.contactState = 'AABB visibles: objetos acercándose';
+        showToast('Módulo 4 listo: AABB visibles y contacto cercano');
+      }
+      if(mod === 'ik'){
+        armGroup.visible = true; ikTarget.visible = true;
+        armBase.position.set(basePos.x,0.3,basePos.z);
+        ikTarget.position.set(11,1.3,6.4);
+        ikTargetAngle = 0;
+        ikAutoMove = true;
+        updateIK();
+        showToast('Módulo 5 listo: cinemática inversa');
+      }
+    }
+
+    // ============================================================
+    // ACCIONES DE MÓDULO
+    // ============================================================
+    function doModuleAction(actionIndex){
+      const id = modules[currentModule].id;
+      if(id === 'kinematics'){
+        if(actionIndex === 1){ moduleState.interpolationEnabled = true; showToast('Interpolación activada'); }
+        if(actionIndex === 2){ moduleState.interpolationEnabled = false; moduleState.lastRigidJump = true; showToast('Movimiento rígido activado'); }
+        if(actionIndex === 3){ moduleState.platformDirection *= -1; showToast('Dirección invertida'); }
+      }
+      if(id === 'forces'){
+        if(actionIndex === 1){ blueSphere.addImpulse(new THREE.Vector3(9,9,-2)); showToast('Impulso aplicado a la esfera'); }
+        if(actionIndex === 2){ redCube.addImpulse(new THREE.Vector3(12,4,0)); showToast('Impulso aplicado al cubo rojo'); }
+        if(actionIndex === 3){ simState.gravityEnabled = !simState.gravityEnabled; showToast(`Gravedad ${simState.gravityEnabled ? 'activada' : 'desactivada'}`); }
+      }
+      if(id === 'collisions'){
+        if(actionIndex === 1){
+          blueSphere.mesh.position.set(-4.2,0.7,0); blueSphere.velocity.set(5.2,0,0);
+          orangeSphere.mesh.position.set(4.2,0.82,0); orangeSphere.velocity.set(-2.4,0,0);
+          moduleState.collisionMode = 'front';
+          simState.contactState = 'Esferas acercándose para choque frontal';
+          showToast('Choque frontal preparado');
+        }
+        if(actionIndex === 2){
+          simState.restitutionIndex = (simState.restitutionIndex + 1) % simState.restitutionModes.length;
+          simState.globalRestitution = simState.restitutionModes[simState.restitutionIndex].value;
+          showToast(`Restitución: ${simState.restitutionModes[simState.restitutionIndex].name}`);
+        }
+        if(actionIndex === 3){
+          blueSphere.mesh.position.set(-4.8,0.7,-2.2); blueSphere.velocity.set(5.4,0,1.55);
+          orangeSphere.mesh.position.set(3.7,0.82,0.3); orangeSphere.velocity.set(-1.7,0,-0.25);
+          moduleState.collisionMode = 'angled';
+          simState.contactState = 'Esferas acercándose para choque angular';
+          showToast('Choque angular preparado');
+        }
+      }
+      if(id === 'detection'){
+        if(actionIndex === 1){ moduleState.showAABB = true; showToast('AABB visibles'); }
+        if(actionIndex === 2){
+          redCube.mesh.position.set(-5.2,0.62,-3); redCube.velocity.set(3.8,0,0);
+          purpleBlock.mesh.position.set(1.2,0.52,-3); purpleBlock.velocity.set(0,0,0);
+          blueSphere.mesh.position.set(-4.8,0.7,3.2); blueSphere.velocity.set(4.5,0,-0.45);
+          orangeSphere.mesh.position.set(1.0,0.82,2.7); orangeSphere.velocity.set(0,0,0);
+          simState.collisionCount = 0; simState.broadPhasePairs = 0; simState.narrowPhaseHits = 0;
+          simState.contactState = 'Prueba lanzada: broad phase filtra candidatos';
+          showToast('Prueba de detección lanzada');
+        }
+        if(actionIndex === 3){ moduleState.showAABB = false; showToast('AABB ocultas'); }
+      }
+      if(id === 'ik'){
+        if(actionIndex === 1){
+          ikTargetAngle += Math.PI / 4;
+          ikTarget.position.set(basePos.x + Math.cos(ikTargetAngle)*4.4, 1.3, basePos.z + Math.sin(ikTargetAngle)*2.8);
+          ikAutoMove = false;
+          showToast('Objetivo movido manualmente');
+        }
+        if(actionIndex === 2){ ikAutoMove = !ikAutoMove; showToast(`Auto objetivo ${ikAutoMove ? 'activado' : 'desactivado'}`); }
+        if(actionIndex === 3){
+          ikTarget.position.set(basePos.x + (Math.random()*8-2), 1.3, basePos.z + (Math.random()*8-4));
+          ikAutoMove = false;
+          showToast('Objetivo aleatorio generado');
+        }
+      }
+    }
+
+    // ============================================================
+    // CONTROLES DE ENTRADA
+    // ============================================================
+    const keys = {w:false,a:false,s:false,d:false};
+    const playerForceMagnitude = 36;
+    const playerForce = new THREE.Vector3();
+
+    function playerJumpImpulse(){
+      if(!greenPlayer.active) return;
+      const direction = new THREE.Vector3();
+      if(keys.w) direction.z -= 1;
+      if(keys.s) direction.z += 1;
+      if(keys.a) direction.x -= 1;
+      if(keys.d) direction.x += 1;
+      if(direction.lengthSq() === 0) direction.set(0,1,0);
+      else { direction.normalize(); direction.y = 0.65; direction.normalize(); }
+      greenPlayer.addImpulse(direction.multiplyScalar(18));
+    }
+
+    function calculatePlayerForce(){
+      playerForce.set(0,0,0);
+      if(keys.w) playerForce.z -= 1;
+      if(keys.s) playerForce.z += 1;
+      if(keys.a) playerForce.x -= 1;
+      if(keys.d) playerForce.x += 1;
+      if(playerForce.lengthSq() > 0) playerForce.normalize().multiplyScalar(playerForceMagnitude);
+      return playerForce;
+    }
+
+    window.addEventListener('keydown', (e)=>{
+      const k = e.key.toLowerCase(); if(k in keys) keys[k] = true;
+      if(e.repeat) return;
+      if(e.code === 'Space'){ e.preventDefault(); playerJumpImpulse(); }
+      if(k === '1') activateModule(0);
+      if(k === '2') activateModule(1);
+      if(k === '3') activateModule(2);
+      if(k === '4') activateModule(3);
+      if(k === '5') activateModule(4);
+      if(k === 'r') resetCurrentModule();
+      if(k === 'q') doModuleAction(1);
+      if(k === 'e') doModuleAction(2);
+      if(k === 'f') doModuleAction(3);
+    });
+    window.addEventListener('keyup', (e)=>{ const k = e.key.toLowerCase(); if(k in keys) keys[k] = false; });
+
+    document.querySelectorAll('[data-key]').forEach(btn=>{
+      const key = btn.dataset.key;
+      ['pointerdown'].forEach(ev=> btn.addEventListener(ev, (e)=>{ e.preventDefault(); keys[key] = true; }));
+      ['pointerup','pointercancel','pointerleave'].forEach(ev=> btn.addEventListener(ev, ()=> keys[key] = false));
+    });
+    document.querySelectorAll('[data-special]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const sp = btn.dataset.special;
+        if(sp === 'action1') doModuleAction(1);
+        if(sp === 'action2') doModuleAction(2);
+        if(sp === 'reset') resetCurrentModule();
+        if(sp === 'jump') playerJumpImpulse();
+      });
+    });
+
+    // ============================================================
+    // UI
+    // ============================================================
+    const beginBtn = document.getElementById('beginBtn');
+    const startScreen = document.getElementById('startScreen');
+
+    // El simulador ya inicia activo automáticamente para evitar pantallas bloqueantes.
+    activateModule(0);
+
+    beginBtn.addEventListener('click', ()=>{
+      startScreen.classList.add('hidden');
+      activateModule(0);
+    });
+    document.getElementById('prevModuleBtn').addEventListener('click', ()=> activateModule(currentModule - 1));
+    document.getElementById('nextModuleBtn').addEventListener('click', ()=> activateModule(currentModule + 1));
+    document.getElementById('resetBtn').addEventListener('click', resetCurrentModule);
+    document.getElementById('formulaBtn').addEventListener('click', ()=> document.getElementById('formulaBox').classList.toggle('hidden'));
+    document.getElementById('helpBtn').addEventListener('click', ()=> showToast('Teclas: 1-5 cambian módulo | Q/E/F acciones | WASD mueve al jugador | R reinicia'));
+    document.getElementById('actionBtn1').addEventListener('click', ()=> doModuleAction(1));
+    document.getElementById('actionBtn2').addEventListener('click', ()=> doModuleAction(2));
+    document.getElementById('actionBtn3').addEventListener('click', ()=> doModuleAction(3));
+    document.getElementById('toggleHud').addEventListener('click', ()=>{
+      document.getElementById('hud').classList.toggle('collapsed');
+      document.getElementById('status').classList.toggle('collapsed');
+    });
+
+    // ============================================================
+    // TELEMETRÍA
+    // ============================================================
+    function updateTelemetry(){
+      const mod = modules[currentModule].id;
+      let lines = [];
+      lines.push(`Módulo: ${modules[currentModule].title}`);
+      lines.push(`Estado: ${simState.contactState}`);
+      lines.push(`Colisiones: ${simState.collisionCount}`);
+      lines.push(`Broad Phase pares: ${simState.broadPhasePairs}`);
+      lines.push(`Narrow Phase contactos: ${simState.narrowPhaseHits}`);
+      lines.push(`Restitución: ${simState.restitutionModes[simState.restitutionIndex].name} (${simState.globalRestitution.toFixed(2)})`);
+      lines.push(`Gravedad: ${simState.gravityEnabled ? 'activa' : 'inactiva'}`);
+      lines.push(`Arrastre: ${simState.dragEnabled ? 'activo' : 'inactivo'}`);
+      lines.push(`Rozamiento: ${simState.frictionEnabled ? 'activo' : 'inactivo'}`);
+      if(greenPlayer.active){
+        lines.push('');
+        lines.push(`Jugador | masa=${greenPlayer.mass.toFixed(2)} kg`);
+        lines.push(`velocidad=${greenPlayer.velocity.length().toFixed(2)} m/s`);
+        lines.push(`fuerza neta=${greenPlayer.lastNetForce.length().toFixed(2)} N`);
+      }
+      if(mod === 'kinematics') lines.push(`t interpolación=${moduleState.platformT.toFixed(2)} | interpolación=${moduleState.interpolationEnabled ? 'sí' : 'no'}`);
+      if(mod === 'ik') lines.push(`Efector final=(${endEffector.position.x.toFixed(2)}, ${endEffector.position.z.toFixed(2)})`);
+      lines.push('');
+      lines.push(simState.lastCollisionInfo.replaceAll('\n',' | '));
+      document.getElementById('statusText').textContent = lines.join('\n');
+    }
+
+    // ============================================================
+    // LÓGICA POR MÓDULO
+    // ============================================================
+    function updateKinematics(dt){
+      const targetSpeed = moduleState.platformSpeed * moduleState.platformDirection;
+      if(moduleState.interpolationEnabled){
+        moduleState.platformT += targetSpeed * dt;
+        if(moduleState.platformT > 1){ moduleState.platformT = 1; moduleState.platformDirection = -1; }
+        if(moduleState.platformT < 0){ moduleState.platformT = 0; moduleState.platformDirection = 1; }
+        platform.position.lerpVectors(pointA.position, pointB.position, moduleState.platformT);
+        platform.position.y = 0.25;
+      } else if(moduleState.lastRigidJump){
+        platform.position.copy(moduleState.platformDirection > 0 ? pointB.position : pointA.position);
+        platform.position.y = 0.25;
+        moduleState.lastRigidJump = false;
+      }
+    }
+
+    function updateForces(dt){
+      redCube.update(dt, new THREE.Vector3(13,0,0));
+      blueSphere.update(dt);
+      greenPlayer.update(dt, calculatePlayerForce());
+      updateArrow(velocityArrow, greenPlayer.mesh.position, greenPlayer.velocity, 0.35, 4);
+      updateArrow(forceArrow, greenPlayer.mesh.position, greenPlayer.lastNetForce, 0.06, 4);
+      updateArrow(frictionArrow, greenPlayer.mesh.position, greenPlayer.lastFrictionForce, 0.12, 3);
+    }
+
+    function applyHorizontalDamping(body, factor){
+      body.velocity.x *= factor;
+      body.velocity.z *= factor;
+    }
+
+    function updateCollisionsModule(dt){
+      simState.moduleTimer += dt;
+      blueSphere.update(dt); orangeSphere.update(dt); greenPlayer.update(dt, calculatePlayerForce());
+      solveCollisions();
+
+      // Después del choque se amortigua un poco para que el resultado se lea claro, no como objetos sin control.
+      if(simState.collisionCount > 0){
+        applyHorizontalDamping(blueSphere, 0.992);
+        applyHorizontalDamping(orangeSphere, 0.992);
+      }
+
+      // Si el experimento ya terminó o se separaron demasiado, lo preparamos de nuevo automáticamente.
+      const dx = Math.abs(blueSphere.mesh.position.x - orangeSphere.mesh.position.x);
+      if(simState.moduleTimer > 5.5 || dx > 14){
+        doModuleAction(moduleState.collisionMode === 'angled' ? 3 : 1);
+        simState.moduleTimer = 0;
+      }
+
+      updateArrow(velocityArrow, blueSphere.mesh.position, blueSphere.velocity, 0.28, 3.8);
+      updateArrow(forceArrow, orangeSphere.mesh.position, orangeSphere.velocity, 0.28, 3.8);
+    }
+
+    function updateDetectionModule(dt){
+      simState.moduleTimer += dt;
+      redCube.update(dt); blueSphere.update(dt); purpleBlock.update(dt); orangeSphere.update(dt);
+      solveCollisions();
+
+      if(simState.collisionCount > 0){
+        [redCube, blueSphere, purpleBlock, orangeSphere].forEach(b => applyHorizontalDamping(b, 0.985));
+      }
+
+      // Mantiene la escena didáctica: si ya pasó el contacto, reinicia la prueba de manera limpia.
+      if(simState.moduleTimer > 6){
+        doModuleAction(2);
+        simState.moduleTimer = 0;
+      }
+
+      bodies.forEach(body=>{
+        const helper = boxHelpers.get(body);
+        if(!helper) return;
+        const box = new THREE.Box3().setFromObject(body.mesh);
+        helper.box.copy(box);
+        helper.visible = body.active && moduleState.showAABB;
+      });
+    }
+
+    function updateIKModule(dt){
+      if(ikAutoMove){
+        ikTargetAngle += dt * 0.8;
+        ikTarget.position.set(basePos.x + Math.cos(ikTargetAngle)*4.3, 1.3, basePos.z + Math.sin(ikTargetAngle*1.2)*2.8);
+      }
+      updateIK();
+    }
+
+    // ============================================================
+    // LOOP PRINCIPAL
+    // ============================================================
+    const clock = new THREE.Clock();
+
+    function simulateStep(dt){
+      simState.broadPhasePairs = 0;
+      simState.narrowPhaseHits = 0;
+      const mod = modules[currentModule].id;
+      if(mod === 'kinematics') updateKinematics(dt);
+      if(mod === 'forces') updateForces(dt);
+      if(mod === 'collisions') updateCollisionsModule(dt);
+      if(mod === 'detection') updateDetectionModule(dt);
+      if(mod === 'ik') updateIKModule(dt);
+    }
+
+    function animate(){
+      requestAnimationFrame(animate);
+      const dt = Math.min(clock.getDelta(), MAX_DT);
+      const subDt = dt / SUBSTEPS;
+      for(let i=0;i<SUBSTEPS;i++) simulateStep(subDt);
+      if(impactVisualTimer > 0){ impactVisualTimer -= dt; }
+      else { impactNormalArrow.visible = false; impulseArrow.visible = false; contactMarker.visible = false; }
+      updateTelemetry();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // ============================================================
+    // RESPONSIVE
+    // ============================================================
+    window.addEventListener('resize', ()=>{
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+      renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    });
+  </script>
+</body>
+</html>
